@@ -57,6 +57,7 @@ private:
   float normalizeAngle(const float value);
   float calcAngleDiff(const float ang_1, const float ang_2);
   void driveRobot(const float distanec, const float linear_velocity);
+  void smoothDriveRobot(const float distance, const float linear_velocity);
 
 public:
   RobotController(ros::NodeHandle nh);
@@ -66,5 +67,4 @@ public:
   void publishVelocity(const float linear_vel, const float angular_vel);
   void rotateRobot(const float angle, const float angular_velocity);
   void goToGoal();
-  void arcTo();
 };

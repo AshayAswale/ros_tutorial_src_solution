@@ -101,7 +101,8 @@ void RobotController::goToGoal()
 
   ROS_INFO("Driving Robot.");
   float dist = calcVecLength(goal_x - robot_curr_x_, goal_y - robot_curr_y_);
-  driveRobot(dist, LINEAR_SPEED);
+  // driveRobot(dist, LINEAR_SPEED);
+  smoothDriveRobot(dist, LINEAR_SPEED);
 
   ROS_INFO("Orienting Robot");
   float final_th = calcAngleDiff(goal_th, robot_curr_th_);
@@ -110,38 +111,45 @@ void RobotController::goToGoal()
   ROS_INFO("Done Moving Robot");
 }
 
-void RobotController::arcTo()
+void RobotController::smoothDriveRobot(const float distance, const float linear_velocity)
 {
-  float goal_x = goal_pose_.pose.position.x;
-  float goal_y = goal_pose_.pose.position.y;
-  
-  geometry_msgs::Quaternion goal_quat = goal_pose_.pose.orientation;
-  float goal_th = tf::getYaw(goal_quat);
+  geometry_msgs::Point init_position;
+  init_position.x = robot_curr_x_;
+  init_position.y = robot_curr_y_;
 
-  bool is_reached = false;
+  std::vector<float> phases;
+  phases.resize(3);
+  phases.at(0) = distance;
+  phases.at(1) = distance*0.8;
+  phases.at(2) = distance*0.2;
 
-  float vec_to_target_x, vec_to_target_y, ang_to_target;
-  float curr_dist;
-  float robot_vel_x, robot_ang_vel;
-
-  while (!is_reached)
+  bool reached = false;
+  while (!reached)
   {
-    vec_to_target_x = goal_x - robot_curr_x_;
-    vec_to_target_y = goal_y - robot_curr_y_;
-    curr_dist = calcVecLength(vec_to_target_x, vec_to_target_y);
-    if (isWithinTolerance(curr_dist))
+    float vec_length = calcVecLength(init_position.x - robot_curr_x_, init_position.y - robot_curr_y_);
+    float curr_dist = std::fabs(distance - vec_length);
+
+    int phase = 0;
+    if(curr_dist < phases.at(2))
+      phase = 2;
+    else if (curr_dist < phases.at(1))
+      phase = 1;
+
+    if(isWithinTolerance(curr_dist))
     {
-      is_reached = true;
+      reached = true;
       break;
     }
-    ang_to_target = calcVecAngle(vec_to_target_x, vec_to_target_y);
-    robot_vel_x = copysign(std::min(std::fabs(curr_dist), LINEAR_SPEED), curr_dist);
-    robot_ang_vel = copysign(std::min(std::fabs(ang_to_target), ANGULAR_SPEED), ang_to_target);
 
-    publishVelocity(robot_vel_x, robot_ang_vel);
+    float ls = linear_velocity;
+    if (phase == 0)
+      ls = linear_velocity * (1.0 - (curr_dist - phases.at(1)) / (phases.at(2) - phases.at(1)));
+    else if(phase == 2)
+      ls = linear_velocity * ((curr_dist + 0.01) / phases.at(2));
+
+    publishVelocity(ls, 0.0);
     ros::Duration(SLEEP_TIME).sleep();
   }
-  // rotateRobot(goal_th, ANGULAR_SPEED);
   publishVelocity(0.0, 0.0);
 }
 
@@ -164,8 +172,7 @@ int main(int argc, char **argv)
     if (control.goal_available_)
     {
       ROS_INFO("Moving to Goal");
-      // control.goToGoal();
-      control.arcTo();
+      control.goToGoal();
     }
     // ROS_INFO("Sleeping...");
     rate.sleep();
