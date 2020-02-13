@@ -14,9 +14,9 @@ RobotController::~RobotController()
 void RobotController::odometryCB(const nav_msgs::Odometry &msg)
 {
   robot_odom_ = msg;
-  px_ = msg.pose.pose.position.x;
-  py_ = msg.pose.pose.position.y;
-  pth_ = tf::getYaw(msg.pose.pose.orientation);
+  robot_curr_x_ = msg.pose.pose.position.x;
+  robot_curr_y_ = msg.pose.pose.position.y;
+  robot_curr_th_ = tf::getYaw(msg.pose.pose.orientation);
   msg.pose.pose.orientation;
 }
 
@@ -61,8 +61,8 @@ float RobotController::calcAngleDiff(const float ang_1, const float ang_2)
 void RobotController::driveRobot(const float distance, const float linear_velocity)
 {
   geometry_msgs::Point init_position;
-  init_position.x = px_;
-  init_position.y = py_;
+  init_position.x = robot_curr_x_;
+  init_position.y = robot_curr_y_;
 
   publishVelocity(linear_velocity, 0.0);
 
@@ -75,11 +75,11 @@ void RobotController::driveRobot(const float distance, const float linear_veloci
 void RobotController::rotateRobot(const float angle, const float angular_velocity)
 {
   float limit_angle = calcAngleDiff(angle, ANGLE_TOLERANCE);
-  float init_th = pth_;
+  float init_th = robot_curr_th_;
 
   publishVelocity(0.0, std::copysign(angular_velocity, angle));
 
-  while (std::fabs(calcAngleDiff(pth_, init_th)) < std::fabs(limit_angle))
+  while (std::fabs(calcAngleDiff(robot_curr_th_, init_th)) < std::fabs(limit_angle))
     ros::Duration(SLEEP_TIME).sleep();
 
   publishVelocity(0.0, 0.0);
@@ -87,26 +87,62 @@ void RobotController::rotateRobot(const float angle, const float angular_velocit
 
 void RobotController::goToGoal()
 {
+  goal_available_ = false;
+
   float goal_x = goal_pose_.pose.position.x;
   float goal_y = goal_pose_.pose.position.y;
   geometry_msgs::Quaternion goal_quat = goal_pose_.pose.orientation;
   float goal_th = tf::getYaw(goal_quat);
 
   ROS_INFO("Facing direction.");
-  float vec_angle = calcVecAngle(goal_x - px_, goal_y - py_);
-  float face_th = calcAngleDiff(vec_angle, pth_);
+  float vec_angle = calcVecAngle(goal_x - robot_curr_x_, goal_y - robot_curr_y_);
+  float face_th = calcAngleDiff(vec_angle, robot_curr_th_);
   rotateRobot(face_th, ANGULAR_SPEED);
 
   ROS_INFO("Driving Robot.");
-  float dist = calcVecLength(goal_x - px_, goal_y - py_);
+  float dist = calcVecLength(goal_x - robot_curr_x_, goal_y - robot_curr_y_);
   driveRobot(dist, LINEAR_SPEED);
 
   ROS_INFO("Orienting Robot");
-  float final_th = calcAngleDiff(goal_th, pth_);
+  float final_th = calcAngleDiff(goal_th, robot_curr_th_);
   rotateRobot(final_th, ANGULAR_SPEED);
 
-  goal_available_ = false;
   ROS_INFO("Done Moving Robot");
+}
+
+void RobotController::arcTo()
+{
+  float goal_x = goal_pose_.pose.position.x;
+  float goal_y = goal_pose_.pose.position.y;
+  
+  geometry_msgs::Quaternion goal_quat = goal_pose_.pose.orientation;
+  float goal_th = tf::getYaw(goal_quat);
+
+  bool is_reached = false;
+
+  float vec_to_target_x, vec_to_target_y, ang_to_target;
+  float curr_dist;
+  float robot_vel_x, robot_ang_vel;
+
+  while (!is_reached)
+  {
+    vec_to_target_x = goal_x - robot_curr_x_;
+    vec_to_target_y = goal_y - robot_curr_y_;
+    curr_dist = calcVecLength(vec_to_target_x, vec_to_target_y);
+    if (isWithinTolerance(curr_dist))
+    {
+      is_reached = true;
+      break;
+    }
+    ang_to_target = calcVecAngle(vec_to_target_x, vec_to_target_y);
+    robot_vel_x = copysign(std::min(std::fabs(curr_dist), LINEAR_SPEED), curr_dist);
+    robot_ang_vel = copysign(std::min(std::fabs(ang_to_target), ANGULAR_SPEED), ang_to_target);
+
+    publishVelocity(robot_vel_x, robot_ang_vel);
+    ros::Duration(SLEEP_TIME).sleep();
+  }
+  // rotateRobot(goal_th, ANGULAR_SPEED);
+  publishVelocity(0.0, 0.0);
 }
 
 int main(int argc, char **argv)
@@ -128,7 +164,8 @@ int main(int argc, char **argv)
     if (control.goal_available_)
     {
       ROS_INFO("Moving to Goal");
-      control.goToGoal();
+      // control.goToGoal();
+      control.arcTo();
     }
     // ROS_INFO("Sleeping...");
     rate.sleep();

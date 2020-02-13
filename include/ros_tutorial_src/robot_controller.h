@@ -16,7 +16,7 @@ private:
   float ANGLE_TOLERANCE = 3.0 * M_PI / 180.0; // rad
   float SLEEP_TIME = 0.05;                    // s
 
-  float px_, py_, pth_;
+  float robot_curr_x_, robot_curr_y_, robot_curr_th_;
 
   nav_msgs::Odometry robot_odom_;
   geometry_msgs::PoseStamped goal_pose_;
@@ -36,7 +36,7 @@ private:
 
   inline bool isWithinTolerance(const float value)
   {
-    return std::fabs(value);
+    return (std::fabs(value))<DISTANCE_TOLERANCE;
   }
 
   inline float convQuatToEuler(const geometry_msgs::Quaternion &msg_quat)
@@ -46,7 +46,7 @@ private:
 
   inline bool isReached(const geometry_msgs::Point &init_pose, const float distance)
   {
-    float travel_dist = calcVecLength(init_pose.x - px_, init_pose.y - py_);
+    float travel_dist = calcVecLength(init_pose.x - robot_curr_x_, init_pose.y - robot_curr_y_);
     float desired_travel_dist = distance - DISTANCE_TOLERANCE;
     return travel_dist < desired_travel_dist;
   }
@@ -66,4 +66,5 @@ public:
   void publishVelocity(const float linear_vel, const float angular_vel);
   void rotateRobot(const float angle, const float angular_velocity);
   void goToGoal();
+  void arcTo();
 };
